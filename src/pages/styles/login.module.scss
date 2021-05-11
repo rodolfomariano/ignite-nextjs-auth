@@ -1,0 +1,18 @@
+
+.container {
+  width: 100vw;
+  height: 100vh;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.form__container {
+  display: flex;
+  flex-direction: column;
+}
+
+.form__header {
+  color: #333;
+}
