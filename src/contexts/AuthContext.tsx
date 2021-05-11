@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useEffect, useState } from "react";
 import Router from 'next/router'
-import { parseCookies, setCookie } from 'nookies'
-import { api } from "../services/api";
+import { destroyCookie, parseCookies, setCookie } from 'nookies'
+import { api } from "../services/apiClient";
 
 type User = {
   email: string
@@ -15,7 +15,8 @@ type SignInCredentials = {
 }
 
 type AuthContextData = {
-  signIn(credentials: SignInCredentials): Promise<void>
+  signIn: (credentials: SignInCredentials) => Promise<void>
+  signOut: () => void
   user: User
   isAuthenticated: boolean
 }
@@ -26,16 +27,51 @@ type AuthProviderProps = {
 
 export const AuthContext = createContext({} as AuthContextData)
 
+let authChanel: BroadcastChannel
+
+export function signOut() {
+  destroyCookie(undefined, 'nextauth.token')
+  destroyCookie(undefined, 'nextauth.refreshToken')
+
+  authChanel.postMessage('signOut')
+
+  Router.push('/')
+}
+
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User>()
   const isAuthenticated = !!user
 
   useEffect(() => {
+    authChanel = new BroadcastChannel('auth')
+
+    authChanel.onmessage = (message) => {
+      switch (message.data) {
+        case 'signOut':
+          signOut()
+          authChanel.close()
+          break;
+        case 'signIn':
+          window.location.replace("http://localhost:3000/dashboard")
+          break
+        default:
+          break;
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     const { 'nextauth.token': token } = parseCookies()
 
     if (token) {
-      api.get('/me').then(response => {
-        console.log(response)
+      api.get('/me')
+        .then(response => {
+          const { email, permissions, roles } = response.data
+
+          setUser({ email, permissions, roles})
+      })
+      .catch(() => {
+        signOut()
       })
     }
 
@@ -66,7 +102,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         roles
       })
 
+      api.defaults.headers['Authorization'] = `Bearer ${token}`
+
       Router.push('/dashboard')
+
+      authChanel.postMessage('signIn')
 
     } catch (error) {
       console.log(error)
@@ -74,7 +114,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   return (
-    <AuthContext.Provider value={{ signIn, isAuthenticated, user }}>
+    <AuthContext.Provider value={{ signIn, isAuthenticated, signOut, user }}>
       {children}
     </AuthContext.Provider>
   )
